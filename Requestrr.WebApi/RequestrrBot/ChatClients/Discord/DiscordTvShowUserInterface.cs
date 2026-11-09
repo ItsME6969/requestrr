@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using DSharpPlus;
 using DSharpPlus.Entities;
@@ -11,6 +12,10 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
 {
     public class DiscordTvShowUserInterface : ITvShowUserInterface
     {
+        private const int DiscordSelectOptionLimit = 25;
+        private const int PagedSelectItemLimit = DiscordSelectOptionLimit - 1;
+        private static readonly SemaphoreSlim PaginationEditLock = new(1, 1);
+
         private readonly DiscordInteraction _interactionContext;
         private readonly ITvShowIssueSearcher _tvShowIssue;
 
@@ -55,14 +60,38 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
             return embedBuilder.Build();
         }
 
-        public async Task DisplayMultiSeasonSelectionAsync(TvShowRequest request, TvShow tvShow, TvSeason[] tvSeasons)
+        public async Task DisplayMultiSeasonSelectionAsync(TvShowRequest request, TvShow tvShow, TvSeason[] tvSeasons, int page = 0)
         {
-            var embed = GenerateTvShowDetailsAsync(tvShow);
-            var options = tvSeasons.Select(x => new DiscordSelectComponentOption(GetFormattedSeasonName(tvShow, x), $"{request.CategoryId}/{tvShow.TheTvDbId.ToString()}/{x.SeasonNumber.ToString()}")).ToList();
-            var seasonSelector = new DiscordSelectComponent($"TSS/{_interactionContext.User.Id}/{request.CategoryId}", LimitStringSize(Language.Current.DiscordCommandTvRequestHelpSeasonsDropdown), options);
+            await PaginationEditLock.WaitAsync();
+            try
+            {
+                var embed = GenerateTvShowDetailsAsync(tvShow);
+                var totalPages = GetPageCount(tvSeasons.Length);
+                page = ClampPage(page, totalPages);
+                var options = tvSeasons
+                    .Skip(page * PagedSelectItemLimit)
+                    .Take(PagedSelectItemLimit)
+                    .Select(x => new DiscordSelectComponentOption(GetFormattedSeasonName(tvShow, x), $"{request.CategoryId}/{tvShow.TheTvDbId}/{x.SeasonNumber}"))
+                    .ToList();
+                var seasonSelector = new DiscordSelectComponent($"TSS/{_interactionContext.User.Id}/{request.CategoryId}", LimitStringSize(Language.Current.DiscordCommandTvRequestHelpSeasonsDropdown), options);
 
-            var builder = (await AddPreviousDropdownsAsync(tvShow, new DiscordWebhookBuilder().AddEmbed(embed))).AddComponents(seasonSelector).WithContent(Language.Current.DiscordCommandTvRequestHelpSeasons);
-            await _interactionContext.EditOriginalResponseAsync(builder);
+                var builder = (await AddPreviousDropdownsAsync(tvShow, new DiscordWebhookBuilder().AddEmbed(embed), false))
+                    .AddComponents(seasonSelector)
+                    .WithContent(Language.Current.DiscordCommandTvRequestHelpSeasons);
+
+                if (totalPages > 1)
+                {
+                    builder.AddComponents(
+                        new DiscordButtonComponent(ButtonStyle.Secondary, $"TSSP/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{page - 1}", "◀ Previous", page == 0),
+                        new DiscordButtonComponent(ButtonStyle.Secondary, $"TSSP/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{page + 1}", "Next ▶", page >= totalPages - 1));
+                }
+
+                await _interactionContext.EditOriginalResponseAsync(builder);
+            }
+            finally
+            {
+                PaginationEditLock.Release();
+            }
         }
 
         public async Task DisplayNotificationSuccessForSeasonAsync(TvShow tvShow, TvSeason requestedSeason)
@@ -161,7 +190,7 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
         /// <param name="seasonNumber">Season number being reported</param>
         /// <param name="episodeNumber">Episode number being reported</param>
         /// <returns></returns>
-        public async Task DisplayTvShowIssueDetailsAsync(TvShowRequest request, TvShow tvShow, string issue, int? seasonNumber, int? episodeNumber)
+        public async Task DisplayTvShowIssueDetailsAsync(TvShowRequest request, TvShow tvShow, string issue, int? seasonNumber, int? episodeNumber, int seasonPage = 0, int episodePage = 0)
         {
             //Validate that the TV issue searcher is not null
             if (_tvShowIssue == null)
@@ -185,29 +214,48 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
             var selectedSeasonNumber = seasonNumber ?? 0;
             var selectedEpisodeNumber = episodeNumber ?? -1;
             var issueValue = string.IsNullOrWhiteSpace(issue) ? "0" : issue;
+            var paginationButtons = new List<DiscordButtonComponent>();
 
-            var seasonOptions = BuildIssueSeasonOptions(tvShow, selectedSeasonNumber);
+            var seasonOptions = BuildIssueSeasonOptions(tvShow, selectedSeasonNumber, seasonPage, out var seasonPageCount);
             if (seasonOptions.Any())
             {
                 var seasonSelect = new DiscordSelectComponent(
-                    $"TIRSS/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{issueValue}/{selectedEpisodeNumber}",
+                    $"TIRSS/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{issueValue}/{selectedEpisodeNumber}/{seasonPage}",
                     LimitStringSize(Language.Current.DiscordCommandTvRequestHelpSeasonsDropdown),
                     seasonOptions
                 );
                 builder.AddComponents(seasonSelect);
+
+                if (seasonPageCount > 1)
+                {
+                    paginationButtons.AddRange(new[]
+                    {
+                        new DiscordButtonComponent(ButtonStyle.Secondary, $"TIRSP/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{issueValue}/{selectedSeasonNumber}/{selectedEpisodeNumber}/{seasonPage - 1}/{episodePage}", "◀ Previous", seasonPage == 0),
+                        new DiscordButtonComponent(ButtonStyle.Secondary, $"TIRSP/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{issueValue}/{selectedSeasonNumber}/{selectedEpisodeNumber}/{seasonPage + 1}/{episodePage}", "Next ▶", seasonPage >= seasonPageCount - 1)
+                    });
+                }
             }
 
             if (selectedSeasonNumber > 0)
             {
-                var episodeOptions = BuildIssueEpisodeOptions(tvShow, selectedSeasonNumber, selectedEpisodeNumber);
+                var episodeOptions = BuildIssueEpisodeOptions(tvShow, selectedSeasonNumber, selectedEpisodeNumber, episodePage, out var episodePageCount);
                 if (episodeOptions.Any())
                 {
                     var episodeSelect = new DiscordSelectComponent(
-                        $"TIRSE/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{issueValue}/{selectedSeasonNumber}",
+                        $"TIRSE/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{issueValue}/{selectedSeasonNumber}/{seasonPage}/{episodePage}",
                         LimitStringSize(Language.Current.DiscordCommandTvIssueHelpEpisodesDropdown),
                         episodeOptions
                     );
                     builder.AddComponents(episodeSelect);
+
+                    if (episodePageCount > 1)
+                    {
+                        paginationButtons.AddRange(new[]
+                        {
+                            new DiscordButtonComponent(ButtonStyle.Secondary, $"TIREP/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{issueValue}/{selectedSeasonNumber}/{seasonPage}/{episodePage - 1}", "◀ Previous", episodePage == 0),
+                            new DiscordButtonComponent(ButtonStyle.Secondary, $"TIREP/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{issueValue}/{selectedSeasonNumber}/{seasonPage}/{episodePage + 1}", "Next ▶", episodePage >= episodePageCount - 1)
+                        });
+                    }
                 }
             }
 
@@ -215,12 +263,17 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
                 .Select(x => new DiscordSelectComponentOption(LimitStringSize(x.Key), x.Value.ToString(), null, x.Value.ToString() == issue))
                 .ToList();
             var issueSelect = new DiscordSelectComponent(
-                $"TIRS/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{selectedSeasonNumber}/{selectedEpisodeNumber}",
+                $"TIRS/{_interactionContext.User.Id}/{request.CategoryId}/{tvShow.TheTvDbId}/{selectedSeasonNumber}/{selectedEpisodeNumber}/{seasonPage}/{episodePage}",
                 LimitStringSize(Language.Current.DiscordCommandIssueHelpDropdown),
                 issueOptions
             );
 
             builder.AddComponents(issueSelect).WithContent(message);
+
+            if (paginationButtons.Any())
+            {
+                builder.AddComponents(paginationButtons.ToArray());
+            }
 
             //If issue has been selected, add submit issue button to prompt for description
             if (!string.IsNullOrWhiteSpace(issue))
@@ -440,7 +493,7 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
             }
         }
 
-        private async Task<DiscordWebhookBuilder> AddPreviousDropdownsAsync(TvShow tvShow, DiscordWebhookBuilder builder)
+        private async Task<DiscordWebhookBuilder> AddPreviousDropdownsAsync(TvShow tvShow, DiscordWebhookBuilder builder, bool includeSeasonSelector = true)
         {
             var selectors = (await _interactionContext.GetOriginalResponseAsync()).FilterComponents<DiscordSelectComponent>();
             DiscordSelectComponent previousTvSelector = selectors.FirstOrDefault(x => x.CustomId.StartsWith("TRS", true, null));
@@ -451,9 +504,9 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
                 builder.AddComponents(tvSelector);
             }
 
-            DiscordSelectComponent previousSeasonSelector = selectors.FirstOrDefault(x => x.CustomId.StartsWith("TSS", true, null));
+            DiscordSelectComponent previousSeasonSelector = selectors.FirstOrDefault(x => x.CustomId.StartsWith("TSS/", true, null));
 
-            if (previousSeasonSelector != null)
+            if (includeSeasonSelector && previousSeasonSelector != null)
             {
                 if (!tvShow.AllSeasonsAvailable() && previousSeasonSelector != null && previousSeasonSelector.Options.Any(x => x.Value.Contains(tvShow.TheTvDbId.ToString(), StringComparison.OrdinalIgnoreCase)))
                 {
@@ -524,7 +577,7 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
             return selector.Options.Any(x => x.Value.Split("/").Length == 2);
         }
 
-        private List<DiscordSelectComponentOption> BuildIssueSeasonOptions(TvShow tvShow, int selectedSeasonNumber)
+        private List<DiscordSelectComponentOption> BuildIssueSeasonOptions(TvShow tvShow, int selectedSeasonNumber, int page, out int pageCount)
         {
             var options = new List<DiscordSelectComponentOption>();
             var seasons = tvShow.Seasons ?? Array.Empty<TvSeason>();
@@ -541,31 +594,58 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
                 x.SeasonNumber == selectedSeasonNumber
             )));
 
-            return options;
+            pageCount = GetPageCount(options.Count);
+            page = ClampPage(page, pageCount);
+            return options.Skip(page * PagedSelectItemLimit).Take(PagedSelectItemLimit).ToList();
         }
 
-        private List<DiscordSelectComponentOption> BuildIssueEpisodeOptions(TvShow tvShow, int selectedSeasonNumber, int selectedEpisodeNumber)
+        private List<DiscordSelectComponentOption> BuildIssueEpisodeOptions(TvShow tvShow, int selectedSeasonNumber, int selectedEpisodeNumber, int page, out int pageCount)
         {
             var seasons = tvShow.Seasons ?? Array.Empty<TvSeason>();
             var season = seasons.FirstOrDefault(x => x.SeasonNumber == selectedSeasonNumber);
             var episodes = season?.Episodes ?? Array.Empty<TvEpisode>();
+            var orderedEpisodes = episodes.OrderBy(x => x.EpisodeNumber).ToList();
 
             if (!episodes.Any())
             {
+                pageCount = 0;
                 return new List<DiscordSelectComponentOption>();
             }
 
-            var options = new List<DiscordSelectComponentOption>
-            {
-                new DiscordSelectComponentOption(LimitStringSize(Language.Current.DiscordCommandTvIssueHelpEpisodesFullSeason), "0", null, selectedEpisodeNumber <= 0)
-            };
+            pageCount = GetPageCount(orderedEpisodes.Count, PagedSelectItemLimit);
+            page = ClampPage(page, pageCount);
+            var options = new List<DiscordSelectComponentOption>();
 
-            foreach (var episode in episodes.OrderBy(x => x.EpisodeNumber).Take(24))
+            if (page == 0)
             {
-                options.Add(new DiscordSelectComponentOption($"Episode {episode.EpisodeNumber}", episode.EpisodeNumber.ToString(), null, episode.EpisodeNumber == selectedEpisodeNumber));
+                options.Add(new DiscordSelectComponentOption(
+                    LimitStringSize(Language.Current.DiscordCommandTvIssueHelpEpisodesFullSeason),
+                    "0",
+                    null,
+                    selectedEpisodeNumber <= 0));
             }
 
+            var episodeOffset = page * PagedSelectItemLimit;
+            options.AddRange(orderedEpisodes
+                .Skip(episodeOffset)
+                .Take(PagedSelectItemLimit)
+                .Select(episode => new DiscordSelectComponentOption(
+                    $"Episode {episode.EpisodeNumber}",
+                    episode.EpisodeNumber.ToString(),
+                    null,
+                    episode.EpisodeNumber == selectedEpisodeNumber)));
+
             return options;
+        }
+
+        private static int GetPageCount(int itemCount, int pageSize = PagedSelectItemLimit)
+        {
+            return Math.Max(1, (int)Math.Ceiling(itemCount / (double)pageSize));
+        }
+
+        private static int ClampPage(int page, int pageCount)
+        {
+            return Math.Max(0, Math.Min(page, Math.Max(0, pageCount - 1)));
         }
 
         private string GetIssueLocationSuffix(int? seasonNumber, int? episodeNumber)

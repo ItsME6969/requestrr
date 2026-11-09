@@ -153,6 +153,21 @@ namespace Requestrr.WebApi.RequestrrBot.TvShows
             await HandleSeasonSelectionAsync(tvShow, selectedSeason);
         }
 
+        public async Task DisplaySeasonPageAsync(int tvDbId, int page)
+        {
+            var cacheKey = TvShowInteractionCache.CreateKey(_user.UserId, _categoryId, tvDbId);
+            var tvShow = TvShowInteractionCache.TryGet(cacheKey, out var cachedTvShow)
+                ? cachedTvShow
+                : await GetTvShowAsync(tvDbId);
+            var seasons = GetAvailableTvShowSeasonsBasedOnRestrictions(tvShow);
+
+            await _userInterface.DisplayMultiSeasonSelectionAsync(
+                new TvShowRequest(_user, _categoryId),
+                tvShow,
+                seasons,
+                Math.Max(0, page));
+        }
+
         private async Task HandleSeasonSelectionAsync(TvShow tvShow, TvSeason selectedSeason)
         {
             switch (selectedSeason)
@@ -204,7 +219,7 @@ namespace Requestrr.WebApi.RequestrrBot.TvShows
 
             if (tvShow.IsMultiSeasons())
             {
-                if (_settings.Restrictions == TvShowsRestrictions.AllSeasons || tvShow.Seasons.Length <= 24)
+                if (!tvShow.Seasons.Any(x => x.SeasonNumber == 0))
                 {
                     tvShow.Seasons = tvShow.Seasons.Prepend(new AllTvSeasons
                     {
@@ -213,11 +228,11 @@ namespace Requestrr.WebApi.RequestrrBot.TvShows
                         IsRequested = RequestedState.None,
                     }).ToArray();
                 }
-                else
-                {
-                    tvShow.Seasons = tvShow.Seasons.TakeLast(25).ToArray();
-                }
             }
+
+            TvShowInteractionCache.Set(
+                TvShowInteractionCache.CreateKey(_user.UserId, _categoryId, tvDbId),
+                tvShow);
 
             return tvShow;
         }

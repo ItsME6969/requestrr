@@ -140,7 +140,7 @@ namespace Requestrr.WebApi.RequestrrBot.TvShows
 
             if (tvShow.IsMultiSeasons())
             {
-                if (_settings.Restrictions == TvShowsRestrictions.AllSeasons || tvShow.Seasons.Length <= 24)
+                if (!tvShow.Seasons.Any(x => x.SeasonNumber == 0))
                 {
                     tvShow.Seasons = tvShow.Seasons.Prepend(new AllTvSeasons
                     {
@@ -149,11 +149,11 @@ namespace Requestrr.WebApi.RequestrrBot.TvShows
                         IsRequested = RequestedState.None,
                     }).ToArray();
                 }
-                else
-                {
-                    tvShow.Seasons = tvShow.Seasons.TakeLast(25).ToArray();
-                }
             }
+
+            TvShowInteractionCache.Set(
+                TvShowInteractionCache.CreateKey(_user.UserId, _categoryId, tvDbId),
+                tvShow);
 
             return tvShow;
         }
@@ -161,18 +161,22 @@ namespace Requestrr.WebApi.RequestrrBot.TvShows
 
 
         /// <summary>
-        /// Handle the converting of a TVDM ID to the title name 
+        /// Handle the converting of a TVDM ID to the title name
         /// </summary>
         /// <param name="theTvDbId">TV Show TVDB Id</param>
         /// <param name="issue">String of issue</param>
         /// <param name="seasonNumber">Season number being reported</param>
         /// <param name="episodeNumber">Episode number being reported</param>
         /// <returns></returns>
-        public async Task HandleIssueTvSelectionAsync(int theTvDbId, string issue = "", int? seasonNumber = null, int? episodeNumber = null)
+        public async Task HandleIssueTvSelectionAsync(int theTvDbId, string issue = "", int? seasonNumber = null, int? episodeNumber = null, int seasonPage = 0, int episodePage = 0)
         {
-            var tvShow = await GetTvShowAsync(theTvDbId);
+            var cacheKey = TvShowInteractionCache.CreateKey(_user.UserId, _categoryId, theTvDbId);
+            var tvShow = TvShowInteractionCache.TryGet(cacheKey, out var cachedTvShow)
+                ? cachedTvShow
+                : await GetTvShowAsync(theTvDbId);
             tvShow = await EnsureSeasonEpisodesAsync(tvShow, seasonNumber);
-            await HandleIssueTvSelectionAsync(tvShow, issue, seasonNumber, episodeNumber);
+            TvShowInteractionCache.Set(cacheKey, tvShow);
+            await HandleIssueTvSelectionAsync(tvShow, issue, seasonNumber, episodeNumber, seasonPage, episodePage);
         }
 
 
@@ -184,9 +188,9 @@ namespace Requestrr.WebApi.RequestrrBot.TvShows
         /// <param name="seasonNumber">Season number being reported</param>
         /// <param name="episodeNumber">Episode number being reported</param>
         /// <returns></returns>
-        private async Task HandleIssueTvSelectionAsync(TvShow tvShow, string issue = "", int? seasonNumber = null, int? episodeNumber = null)
+        private async Task HandleIssueTvSelectionAsync(TvShow tvShow, string issue = "", int? seasonNumber = null, int? episodeNumber = null, int seasonPage = 0, int episodePage = 0)
         {
-            await _userInterface.DisplayTvShowIssueDetailsAsync(new TvShowRequest(_user, _categoryId), tvShow, issue, seasonNumber, episodeNumber);
+            await _userInterface.DisplayTvShowIssueDetailsAsync(new TvShowRequest(_user, _categoryId), tvShow, issue, seasonNumber, episodeNumber, seasonPage, episodePage);
         }
 
 

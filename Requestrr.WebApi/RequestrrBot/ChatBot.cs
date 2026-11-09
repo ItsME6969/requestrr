@@ -32,6 +32,8 @@ namespace Requestrr.WebApi.RequestrrBot
 {
     public class ChatBot
     {
+        private static readonly ConcurrentDictionary<string, byte> ActivePaginationInteractions = new();
+
         private DiscordClient _client;
         private MovieNotificationEngine _movieNotificationEngine;
         private TvShowNotificationEngine _tvShowNotificationEngine;
@@ -420,6 +422,13 @@ namespace Requestrr.WebApi.RequestrrBot
 
         private async Task DiscordComponentInteractionCreatedHandler(DiscordClient client, ComponentInteractionCreateEventArgs e)
         {
+            var paginationKey = GetPaginationKey(e.Id);
+            if (paginationKey != null && !ActivePaginationInteractions.TryAdd(paginationKey, 0))
+            {
+                await e.Interaction.CreateResponseAsync(InteractionResponseType.UpdateMessage);
+                return;
+            }
+
             try
             {
                 if (!e.Id.ToLower().Contains("modal"))
@@ -477,6 +486,29 @@ namespace Requestrr.WebApi.RequestrrBot
                 _logger.LogError(ex, "Error while handling interaction: " + ex.Message);
                 await e.Interaction.EditOriginalResponseAsync(new DiscordWebhookBuilder().WithContent(Language.Current.Error));
             }
+            finally
+            {
+                if (paginationKey != null)
+                {
+                    ActivePaginationInteractions.TryRemove(paginationKey, out _);
+                }
+            }
+        }
+
+        private static string GetPaginationKey(string customId)
+        {
+            if (string.IsNullOrWhiteSpace(customId))
+            {
+                return null;
+            }
+
+            var prefix = customId.Split('/').FirstOrDefault()?.ToUpperInvariant();
+            if (prefix != "TSSP" && prefix != "TIRSP" && prefix != "TIREP")
+            {
+                return null;
+            }
+
+            return string.Join("/", customId.Split('/').Take(4));
         }
 
         private async Task SlashCommandErrorHandler(SlashCommandsExtension extension, SlashCommandErrorEventArgs args)
@@ -584,6 +616,16 @@ namespace Requestrr.WebApi.RequestrrBot
                         .HandleTvShowSelectionAsync(int.Parse(e.Values.Single().Split("/").Last()));
                 }
             }
+            else if (e.Id.ToLower().StartsWith("tssp"))
+            {
+                var splitValues = e.Id.Split("/");
+                var categoryId = int.Parse(splitValues[2]);
+                var tvDbId = int.Parse(splitValues[3]);
+                var page = int.Parse(splitValues[4]);
+
+                await CreateTvShowRequestWorkFlow(e, categoryId)
+                    .DisplaySeasonPageAsync(tvDbId, page);
+            }
             else if (e.Id.ToLower().StartsWith("tss"))
             {
                 if (e.Values != null && e.Values.Any())
@@ -617,7 +659,34 @@ namespace Requestrr.WebApi.RequestrrBot
         /// <returns></returns>
         private async Task HandleTvIssueRequestAsync(ComponentInteractionCreateEventArgs e)
         {
-            if (e.Id.ToLower().StartsWith("tirss"))
+            if (e.Id.ToLower().StartsWith("tirsp"))
+            {
+                var values = e.Id.Split("/");
+                var category = values[2];
+                var tvShow = values[3];
+                var issue = values[4] == "0" ? string.Empty : values[4];
+                var seasonNumber = int.Parse(values[5]);
+                var episodeNumber = int.Parse(values[6]);
+                var seasonPage = int.Parse(values[7]);
+                var episodePage = int.Parse(values[8]);
+
+                await CreateTvShowIssueWorkFlow(e, int.Parse(category))
+                    .HandleIssueTvSelectionAsync(int.Parse(tvShow), issue, seasonNumber, episodeNumber, seasonPage, episodePage);
+            }
+            else if (e.Id.ToLower().StartsWith("tirep"))
+            {
+                var values = e.Id.Split("/");
+                var category = values[2];
+                var tvShow = values[3];
+                var issue = values[4] == "0" ? string.Empty : values[4];
+                var seasonNumber = int.Parse(values[5]);
+                var seasonPage = int.Parse(values[6]);
+                var episodePage = int.Parse(values[7]);
+
+                await CreateTvShowIssueWorkFlow(e, int.Parse(category))
+                    .HandleIssueTvSelectionAsync(int.Parse(tvShow), issue, seasonNumber, null, seasonPage, episodePage);
+            }
+            else if (e.Id.ToLower().StartsWith("tirss"))
             {
                 if (e.Values != null && e.Values.Any())
                 {
@@ -626,6 +695,7 @@ namespace Requestrr.WebApi.RequestrrBot
                     var tvShow = values[3];
                     var issue = values.Length > 4 ? values[4] : string.Empty;
                     var episodeNumber = values.Length > 5 ? int.Parse(values[5]) : -1;
+                    var seasonPage = values.Length > 6 ? int.Parse(values[6]) : 0;
                     var seasonNumber = int.Parse(e.Values.Single());
 
                     if (issue == "0")
@@ -639,7 +709,7 @@ namespace Requestrr.WebApi.RequestrrBot
                     }
 
                     await CreateTvShowIssueWorkFlow(e, int.Parse(category))
-                        .HandleIssueTvSelectionAsync(int.Parse(tvShow), issue, seasonNumber, episodeNumber);
+                        .HandleIssueTvSelectionAsync(int.Parse(tvShow), issue, seasonNumber, episodeNumber, seasonPage, 0);
                 }
             }
             else if (e.Id.ToLower().StartsWith("tirse"))
@@ -651,6 +721,8 @@ namespace Requestrr.WebApi.RequestrrBot
                     var tvShow = values[3];
                     var issue = values.Length > 4 ? values[4] : string.Empty;
                     var seasonNumber = values.Length > 5 ? int.Parse(values[5]) : 0;
+                    var seasonPage = values.Length > 6 ? int.Parse(values[6]) : 0;
+                    var episodePage = values.Length > 7 ? int.Parse(values[7]) : 0;
                     var episodeNumber = int.Parse(e.Values.Single());
 
                     if (issue == "0")
@@ -664,7 +736,7 @@ namespace Requestrr.WebApi.RequestrrBot
                     }
 
                     await CreateTvShowIssueWorkFlow(e, int.Parse(category))
-                        .HandleIssueTvSelectionAsync(int.Parse(tvShow), issue, seasonNumber, episodeNumber);
+                        .HandleIssueTvSelectionAsync(int.Parse(tvShow), issue, seasonNumber, episodeNumber, seasonPage, episodePage);
                 }
             }
             else if (e.Id.ToLower().StartsWith("tirs"))
@@ -689,6 +761,8 @@ namespace Requestrr.WebApi.RequestrrBot
                         var tvShow = values[3];
                         var seasonNumber = values.Length > 4 ? int.Parse(values[4]) : 0;
                         var episodeNumber = values.Length > 5 ? int.Parse(values[5]) : -1;
+                        var seasonPage = values.Length > 6 ? int.Parse(values[6]) : 0;
+                        var episodePage = values.Length > 7 ? int.Parse(values[7]) : 0;
 
                         if (seasonNumber == 0)
                         {
@@ -696,7 +770,7 @@ namespace Requestrr.WebApi.RequestrrBot
                         }
 
                         await CreateTvShowIssueWorkFlow(e, int.Parse(category))
-                            .HandleIssueTvSelectionAsync(int.Parse(tvShow), selectedValue, seasonNumber, episodeNumber);
+                            .HandleIssueTvSelectionAsync(int.Parse(tvShow), selectedValue, seasonNumber, episodeNumber, seasonPage, episodePage);
                     }
                 }
             }
