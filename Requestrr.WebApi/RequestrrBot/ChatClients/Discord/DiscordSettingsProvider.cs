@@ -42,7 +42,7 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
 
         public int ComputeMovieClientConfigurationHashCode(dynamic settings)
         {
-            HashCode hash = new HashCode();
+            var hash = new StableHashCode();
 
             if (settings.Movies.Client == DownloadClient.Radarr)
             {
@@ -88,7 +88,7 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
 
         public int ComputeTvClientConfigurationHashCode(dynamic settings)
         {
-            HashCode hash = new HashCode();
+            var hash = new StableHashCode();
 
             if (settings.TvShows.Client == DownloadClient.Sonarr)
             {
@@ -135,7 +135,7 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
 
         public int ComputeMusicClientConfigurationHashCode(dynamic settings)
         {
-            HashCode hash = new HashCode();
+            var hash = new StableHashCode();
 
             if (settings.Music.Client == DownloadClient.Lidarr)
             {
@@ -150,6 +150,26 @@ namespace Requestrr.WebApi.RequestrrBot.ChatClients.Discord
             }
 
             return hash.ToHashCode();
+        }
+
+        private struct StableHashCode
+        {
+            private int _value;
+
+            public StableHashCode()
+            {
+                _value = 17;
+            }
+
+            public void Add<T>(T value)
+            {
+                unchecked
+                {
+                    _value = (_value * 31) + (value?.GetHashCode() ?? 0);
+                }
+            }
+
+            public int ToHashCode() => _value;
         }
     }
 }

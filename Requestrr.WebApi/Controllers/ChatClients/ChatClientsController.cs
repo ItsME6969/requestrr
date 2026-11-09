@@ -59,7 +59,7 @@ namespace Requestrr.WebApi.Controllers.ChatClients
                 {
                     Token = model.BotToken,
                     TokenType = TokenType.Bot,
-                    Intents = DiscordIntents.All,
+                    Intents = DiscordIntents.Guilds,
                     AutoReconnect = false
                 });
 

@@ -33,6 +33,8 @@ namespace Requestrr.WebApi.RequestrrBot
     public class ChatBot
     {
         private static readonly ConcurrentDictionary<string, byte> ActivePaginationInteractions = new();
+        private static readonly ConcurrentDictionary<string, DateTime> RecentlyHandledPaginationInteractions = new();
+        private static readonly TimeSpan PaginationInteractionGracePeriod = TimeSpan.FromSeconds(5);
 
         private DiscordClient _client;
         private MovieNotificationEngine _movieNotificationEngine;
@@ -158,6 +160,8 @@ namespace Requestrr.WebApi.RequestrrBot
                 _client.ModalSubmitted -= DiscordModalSubmittedHandler;
                 _client.SocketOpened -= OnSocketOpen;
                 _client.SocketClosed -= OnSocketClosed;
+                _client.SocketErrored -= OnSocketError;
+                _client.ClientErrored -= OnClientError;
                 _client.Heartbeated -= Heartbeat;
                 _client.Dispose();
             }
@@ -183,7 +187,9 @@ namespace Requestrr.WebApi.RequestrrBot
                         TokenType = TokenType.Bot,
                         AutoReconnect = true,
                         MinimumLogLevel = LogLevel.Warning,
-                        Intents = DiscordIntents.All,
+                        // Request only the gateway intent required for guild commands and interactions.
+                        // Requesting every privileged intent can trigger DSharpPlus gateway disconnects.
+                        Intents = DiscordIntents.Guilds,
                         ReconnectIndefinitely = true
                     };
 
@@ -208,6 +214,8 @@ namespace Requestrr.WebApi.RequestrrBot
                     _client.ModalSubmitted += DiscordModalSubmittedHandler;
                     _client.SocketOpened += OnSocketOpen;
                     _client.SocketClosed += OnSocketClosed;
+                    _client.SocketErrored += OnSocketError;
+                    _client.ClientErrored += OnClientError;
                     _client.Heartbeated += Heartbeat;
 
                     _currentGuilds = new HashSet<ulong>();
@@ -217,6 +225,7 @@ namespace Requestrr.WebApi.RequestrrBot
                         _heartbeatSentAt = DateTime.Now;
                         _socketClosedAt = null;
                         await _client.ConnectAsync();
+                        _currentGuilds = new HashSet<ulong>(_client.Guilds.Keys);
                     }
                     catch (Exception ex) when (ex.InnerException is DSharpPlus.Exceptions.UnauthorizedException)
                     {
@@ -315,9 +324,22 @@ namespace Requestrr.WebApi.RequestrrBot
             return Task.CompletedTask;
         }
 
+        private Task OnSocketError(DiscordClient client, SocketErrorEventArgs args)
+        {
+            _logger.LogError("Discord socket error: {Error}", args);
+            return Task.CompletedTask;
+        }
+
+        private Task OnClientError(DiscordClient client, ClientErrorEventArgs args)
+        {
+            _logger.LogError("Discord client error: {Error}", args);
+            return Task.CompletedTask;
+        }
+
         private async Task Connected(DiscordClient client, ReadyEventArgs args)
         {
             _socketClosedAt = null;
+            _currentGuilds = new HashSet<ulong>(client.Guilds.Keys);
             await ApplyBotConfigurationAsync(_currentSettings);
         }
 
@@ -423,16 +445,35 @@ namespace Requestrr.WebApi.RequestrrBot
         private async Task DiscordComponentInteractionCreatedHandler(DiscordClient client, ComponentInteractionCreateEventArgs e)
         {
             var paginationKey = GetPaginationKey(e.Id);
-            if (paginationKey != null && !ActivePaginationInteractions.TryAdd(paginationKey, 0))
+            if (paginationKey != null)
             {
-                await e.Interaction.CreateResponseAsync(InteractionResponseType.UpdateMessage);
+                if (WasRecentlyHandledPaginationInteraction(e))
+                {
+                    await TryDeferComponentInteractionAsync(e);
+                    return;
+                }
+
+                if (ActivePaginationInteractions.TryAdd(paginationKey, 0))
+                {
+                    _ = ProcessPaginationInteractionAsync(e, paginationKey);
+                }
+                else
+                {
+                    _ = TryDeferComponentInteractionAsync(e);
+                }
+
                 return;
             }
 
             try
             {
                 if (!e.Id.ToLower().Contains("modal"))
-                    await e.Interaction.CreateResponseAsync(InteractionResponseType.UpdateMessage);
+                {
+                    if (!await TryDeferComponentInteractionAsync(e))
+                    {
+                        return;
+                    }
+                }
 
                 var authorId = ulong.Parse(e.Id.Split("/").Skip(1).First());
 
@@ -492,6 +533,161 @@ namespace Requestrr.WebApi.RequestrrBot
                 {
                     ActivePaginationInteractions.TryRemove(paginationKey, out _);
                 }
+            }
+        }
+
+        private async Task ProcessPaginationInteractionAsync(ComponentInteractionCreateEventArgs e, string paginationKey)
+        {
+            if (!await TryDisablePaginationButtonsAsync(e))
+            {
+                ActivePaginationInteractions.TryRemove(paginationKey, out _);
+                return;
+            }
+
+            try
+            {
+                var authorId = ulong.Parse(e.Id.Split("/").Skip(1).First());
+
+                if (e.User.Id == authorId)
+                {
+                    if (e.Id.ToLower().StartsWith("tr") || e.Id.ToLower().StartsWith("ts"))
+                    {
+                        await HandleTvRequestAsync(e);
+                    }
+                    else if (e.Id.ToLower().StartsWith("tir"))
+                    {
+                        await HandleTvIssueRequestAsync(e);
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                _logger.LogError(ex, "Error while handling pagination interaction: " + ex.Message);
+                try
+                {
+                    await e.Interaction.EditOriginalResponseAsync(new DiscordWebhookBuilder().WithContent(Language.Current.Error));
+                }
+                catch (DSharpPlus.Exceptions.NotFoundException)
+                {
+                    _logger.LogDebug("Pagination interaction expired before its error response could be sent.");
+                }
+                catch (DSharpPlus.Exceptions.BadRequestException)
+                {
+                    _logger.LogDebug("Pagination interaction rejected its error response.");
+                }
+            }
+            finally
+            {
+                RememberHandledPaginationInteraction(e);
+                ActivePaginationInteractions.TryRemove(paginationKey, out _);
+            }
+        }
+
+        private bool WasRecentlyHandledPaginationInteraction(ComponentInteractionCreateEventArgs e)
+        {
+            var key = GetPaginationInteractionKey(e);
+            if (!RecentlyHandledPaginationInteractions.TryGetValue(key, out var handledAt))
+            {
+                return false;
+            }
+
+            if (DateTime.UtcNow - handledAt <= PaginationInteractionGracePeriod)
+            {
+                return true;
+            }
+
+            RecentlyHandledPaginationInteractions.TryRemove(key, out _);
+            return false;
+        }
+
+        private void RememberHandledPaginationInteraction(ComponentInteractionCreateEventArgs e)
+        {
+            var now = DateTime.UtcNow;
+            RecentlyHandledPaginationInteractions[GetPaginationInteractionKey(e)] = now;
+
+            foreach (var entry in RecentlyHandledPaginationInteractions)
+            {
+                if (now - entry.Value > PaginationInteractionGracePeriod)
+                {
+                    RecentlyHandledPaginationInteractions.TryRemove(entry.Key, out _);
+                }
+            }
+        }
+
+        private static string GetPaginationInteractionKey(ComponentInteractionCreateEventArgs e)
+        {
+            return $"{e.Message.Id}:{e.Id}";
+        }
+
+        private async Task<bool> TryDeferComponentInteractionAsync(ComponentInteractionCreateEventArgs e)
+        {
+            try
+            {
+                await e.Interaction.CreateResponseAsync(InteractionResponseType.DeferredMessageUpdate);
+                return true;
+            }
+            catch (DSharpPlus.Exceptions.NotFoundException ex)
+            {
+                _logger.LogDebug(ex, "Ignoring stale Discord interaction acknowledgement (not found).");
+                return false;
+            }
+            catch (DSharpPlus.Exceptions.BadRequestException ex)
+            {
+                _logger.LogDebug(ex, "Ignoring invalid Discord interaction acknowledgement.");
+                return false;
+            }
+        }
+
+        private async Task<bool> TryDisablePaginationButtonsAsync(ComponentInteractionCreateEventArgs e)
+        {
+            try
+            {
+                var builder = new DiscordWebhookBuilder();
+                var buttonRow = new List<DiscordComponent>();
+
+                foreach (var component in e.Message.Components)
+                {
+                    if (component is DiscordButtonComponent button)
+                    {
+                        if (GetPaginationKey(button.CustomId) != null)
+                        {
+                            button = new DiscordButtonComponent(button).Disable();
+                        }
+
+                        buttonRow.Add(button);
+                    }
+                    else
+                    {
+                        if (buttonRow.Count > 0)
+                        {
+                            builder.AddComponents(buttonRow);
+                            buttonRow.Clear();
+                        }
+
+                        builder.AddComponents(component);
+                    }
+                }
+
+                if (buttonRow.Count > 0)
+                {
+                    builder.AddComponents(buttonRow);
+                }
+
+                await e.Interaction.CreateResponseAsync(
+                    InteractionResponseType.UpdateMessage,
+                    new DiscordInteractionResponseBuilder().AddComponents(builder.Components));
+
+                return true;
+            }
+            catch (DSharpPlus.Exceptions.NotFoundException ex)
+            {
+                _logger.LogDebug(ex, "Ignoring stale Discord pagination update (not found).");
+                return false;
+            }
+            catch (DSharpPlus.Exceptions.BadRequestException ex)
+            {
+                _logger.LogDebug(ex, "Ignoring invalid Discord pagination update.");
+                return false;
             }
         }
 
