@@ -173,6 +173,7 @@ export function setRadarrConnectionSettings(connectionSettings) {
             port: connectionSettings.port,
             apiKey: connectionSettings.apiKey,
             useSSL: connectionSettings.useSSL,
+            tagRequestsWithDiscordUsername: connectionSettings.tagRequestsWithDiscordUsername,
             version: connectionSettings.version,
         };
 
@@ -405,6 +406,7 @@ export function saveRadarrClient(saveModel) {
                 "Version": saveModel.radarr.version,
                 'SearchNewRequests': saveModel.radarr.searchNewRequests,
                 'MonitorNewRequests': saveModel.radarr.monitorNewRequests
+                ,'TagRequestsWithDiscordUsername': saveModel.radarr.tagRequestsWithDiscordUsername
             })
         })
             .then(data => data.json())
@@ -420,6 +422,7 @@ export function saveRadarrClient(saveModel) {
                         categories: state.movies.radarr.categories,
                         searchNewRequests: saveModel.radarr.searchNewRequests,
                         monitorNewRequests: saveModel.radarr.monitorNewRequests,
+                        tagRequestsWithDiscordUsername: saveModel.radarr.tagRequestsWithDiscordUsername,
                         version: saveModel.radarr.version
                     };
 

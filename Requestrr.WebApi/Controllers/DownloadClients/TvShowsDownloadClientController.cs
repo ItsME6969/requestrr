@@ -104,6 +104,7 @@ namespace Requestrr.WebApi.Controllers.DownloadClients
                     UseSSL = _downloadClientsSettings.Sonarr.UseSSL,
                     SearchNewRequests = _downloadClientsSettings.Sonarr.SearchNewRequests,
                     MonitorNewRequests = _downloadClientsSettings.Sonarr.MonitorNewRequests,
+                    TagRequestsWithDiscordUsername = _downloadClientsSettings.Sonarr.TagRequestsWithDiscordUsername,
                     Version = _downloadClientsSettings.Sonarr.Version
                 },
                 Ombi = new OmbiTVSettings

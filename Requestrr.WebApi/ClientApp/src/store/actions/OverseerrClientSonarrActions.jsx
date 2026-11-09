@@ -143,6 +143,7 @@ export function setOverseerrTvShowConnectionSettings(connectionSettings) {
             useSSL: connectionSettings.useSSL,
             useMovieIssue: connectionSettings.useMovieIssue,
             useTVIssue: connectionSettings.useTVIssue,
+            tagRequestsWithDiscordUsername: connectionSettings.tagRequestsWithDiscordUsername,
             version: connectionSettings.version,
         };
 
@@ -250,6 +251,7 @@ export function saveOverseerrTvShowClient(saveModel) {
 
         var tvShows = {
             DefaultApiUserID: saveModel.overseerr.defaultApiUserID,
+            TagRequestsWithDiscordUsername: saveModel.overseerr.tagRequestsWithDiscordUsername,
             Categories: state.tvShows.overseerr.categories
         }
 

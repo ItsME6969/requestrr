@@ -10,6 +10,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Requestrr.WebApi.Extensions;
 using Requestrr.WebApi.RequestrrBot.TvShows;
+using Requestrr.WebApi.RequestrrBot.DownloadClients;
 using static Requestrr.WebApi.RequestrrBot.DownloadClients.Sonarr.SonarrClient;
 
 namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Sonarr
@@ -266,6 +267,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Sonarr
         {
             try
             {
+                var requesterTagId = await GetRequesterTagIdAsync(request);
                 var requestedSeasons = season is AllTvSeasons
                                         ? new List<TvSeason>(tvShow.Seasons.OfType<NormalTvSeason>())
                                         : season is FutureTvSeasons
@@ -274,11 +276,11 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Sonarr
 
                 if (string.IsNullOrEmpty(tvShow.DownloadClientId))
                 {
-                    await CreateSonarrTvSeriesAsync(request, tvShow, requestedSeasons);
+                    await CreateSonarrTvSeriesAsync(request, tvShow, requestedSeasons, requesterTagId);
                 }
                 else
                 {
-                    await UpdateSonarrTvSeriesAsync(request, tvShow, requestedSeasons);
+                    await UpdateSonarrTvSeriesAsync(request, tvShow, requestedSeasons, requesterTagId);
                 }
 
                 return new TvShowRequestResult();
@@ -291,7 +293,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Sonarr
             throw new System.Exception("An error occurred while requesting a tv show from Sonarr");
         }
 
-        private async Task CreateSonarrTvSeriesAsync(TvShowRequest request, TvShow tvShow, IReadOnlyList<TvSeason> seasons)
+        private async Task CreateSonarrTvSeriesAsync(TvShowRequest request, TvShow tvShow, IReadOnlyList<TvSeason> seasons, int? requesterTagId = null)
         {
             SonarrCategory category = null;
 
@@ -312,6 +314,10 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Sonarr
             var jsonTvShow = JsonConvert.DeserializeObject<IEnumerable<JSONTvShow>>(jsonResponse).First();
 
             int[] tags = category.Tags;
+            if (requesterTagId.HasValue)
+            {
+                tags = tags.Concat(new[] { requesterTagId.Value }).Distinct().ToArray();
+            }
 
             string seriesType = category.SeriesType;
 
@@ -349,7 +355,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Sonarr
             await response.ThrowIfNotSuccessfulAsync("SonarrSeriesCreation failed", x => x.error);
         }
 
-        private async Task UpdateSonarrTvSeriesAsync(TvShowRequest request, TvShow tvShow, IReadOnlyList<TvSeason> seasons)
+        private async Task UpdateSonarrTvSeriesAsync(TvShowRequest request, TvShow tvShow, IReadOnlyList<TvSeason> seasons, int? requesterTagId = null)
         {
             var response = await HttpGetAsync($"{BaseURL}/series/{tvShow.DownloadClientId}");
 
@@ -361,12 +367,12 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Sonarr
 
                     if (sonarrTvShow != null && sonarrTvShow.id.HasValue)
                     {
-                        await UpdateSonarrTvSeriesAsync(request, tvShow, seasons);
+                        await UpdateSonarrTvSeriesAsync(request, tvShow, seasons, requesterTagId);
                         return;
                     }
                     else
                     {
-                        await CreateSonarrTvSeriesAsync(request, tvShow, seasons);
+                        await CreateSonarrTvSeriesAsync(request, tvShow, seasons, requesterTagId);
                         return;
                     }
                 }
@@ -389,7 +395,13 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Sonarr
                 throw new System.Exception($"An error occurred while requesting tv show \"{tvShow.Title}\" from Sonarr, could not find category with id {request.CategoryId}");
             }
 
-            sonarrSeries.tags = JToken.FromObject(category.Tags);
+            var tags = category.Tags;
+            if (requesterTagId.HasValue)
+            {
+                tags = tags.Concat(new[] { requesterTagId.Value }).Distinct().ToArray();
+            }
+
+            sonarrSeries.tags = JToken.FromObject(tags);
             sonarrSeries.qualityProfileId = category.ProfileId;
             sonarrSeries.languageProfileId = category.LanguageId;
             sonarrSeries.monitored = SonarrSettings.MonitorNewRequests;
@@ -631,6 +643,27 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Sonarr
         private Task<HttpResponseMessage> HttpGetAsync(string url)
         {
             return HttpGetAsync(_httpClientFactory.CreateClient(), SonarrSettings, url);
+        }
+
+        private async Task<int?> GetRequesterTagIdAsync(TvShowRequest request)
+        {
+            if (!SonarrSettings.TagRequestsWithDiscordUsername)
+            {
+                return null;
+            }
+
+            var label = RequesterTagHelper.CreateTag(request.User.UserId, request.User.Username);
+            var tags = await GetTags(_httpClientFactory.CreateClient(), _logger, SonarrSettings);
+            var existingTag = tags.FirstOrDefault(x => string.Equals(x.label, label, StringComparison.OrdinalIgnoreCase));
+            if (existingTag != null)
+            {
+                return existingTag.id;
+            }
+
+            var response = await HttpPostAsync($"{BaseURL}/tag", JsonConvert.SerializeObject(new { id = 0, label }));
+            await response.ThrowIfNotSuccessfulAsync("SonarrRequesterTagCreation failed", x => x.error);
+            var createdTag = JsonConvert.DeserializeObject<JSONTag>(await response.Content.ReadAsStringAsync());
+            return createdTag.id;
         }
 
         private static async Task<HttpResponseMessage> HttpGetAsync(HttpClient client, SonarrSettings settings, string url)

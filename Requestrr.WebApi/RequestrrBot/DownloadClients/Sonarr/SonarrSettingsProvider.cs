@@ -15,6 +15,7 @@
                 Categories =  settings.DownloadClients.Sonarr.Categories.ToObject<SonarrCategory[]>(),
                 SearchNewRequests  = settings.DownloadClients.Sonarr.SearchNewRequests,
                 MonitorNewRequests  = settings.DownloadClients.Sonarr.MonitorNewRequests,
+                TagRequestsWithDiscordUsername = settings.DownloadClients.Sonarr.TagRequestsWithDiscordUsername == true,
                 UseSSL = (bool)settings.DownloadClients.Sonarr.UseSSL,
                 Version = settings.DownloadClients.Sonarr.Version,
             };

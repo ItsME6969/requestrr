@@ -195,6 +195,7 @@ export function setSonarrConnectionSettings(connectionSettings) {
             port: connectionSettings.port,
             apiKey: connectionSettings.apiKey,
             useSSL: connectionSettings.useSSL,
+            tagRequestsWithDiscordUsername: connectionSettings.tagRequestsWithDiscordUsername,
             version: connectionSettings.version,
         };
 
@@ -483,6 +484,7 @@ export function saveSonarrClient(saveModel) {
                 'UseSSL': saveModel.sonarr.useSSL,
                 'SearchNewRequests': saveModel.sonarr.searchNewRequests,
                 'MonitorNewRequests': saveModel.sonarr.monitorNewRequests,
+                'TagRequestsWithDiscordUsername': saveModel.sonarr.tagRequestsWithDiscordUsername,
                 "Version": saveModel.sonarr.version,
                 'Restrictions': saveModel.restrictions,
             })
@@ -499,6 +501,7 @@ export function saveSonarrClient(saveModel) {
                         categories: state.tvShows.sonarr.categories,
                         searchNewRequests: saveModel.sonarr.searchNewRequests,
                         monitorNewRequests: saveModel.sonarr.monitorNewRequests,
+                        tagRequestsWithDiscordUsername: saveModel.sonarr.tagRequestsWithDiscordUsername,
                         useSSL: saveModel.sonarr.useSSL,
                         version: saveModel.sonarr.version,
                         restrictions: saveModel.restrictions,

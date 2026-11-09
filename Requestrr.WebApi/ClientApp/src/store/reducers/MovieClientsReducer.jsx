@@ -22,6 +22,9 @@ export default function MovieClientsReducer(state = {}, action) {
         apiKey: action.payload.overseerr.apiKey,
         defaultApiUserID: action.payload.overseerr.movies.defaultApiUserId,
         categories: action.payload.overseerr.movies.categories,
+        movies: {
+          tagRequestsWithDiscordUsername: action.payload.overseerr.movies.tagRequestsWithDiscordUsername,
+        },
         useSSL: action.payload.overseerr.useSSL,
         useMovieIssue: action.payload.overseerr.useMovieIssue,
         useTVIssue: action.payload.overseerr.useTVIssue,
@@ -40,6 +43,7 @@ export default function MovieClientsReducer(state = {}, action) {
         categories: action.payload.radarr.categories,
         searchNewRequests: action.payload.radarr.searchNewRequests,
         monitorNewRequests: action.payload.radarr.monitorNewRequests,
+        tagRequestsWithDiscordUsername: action.payload.radarr.tagRequestsWithDiscordUsername,
         version: action.payload.radarr.version,
         isLoadingPaths: false,
         hasLoadedPaths: false,

@@ -32,6 +32,7 @@ function OverseerrMovie(props) {
   const [isDefaultApiUserIDValid, setIsDefaultApiUserIDValid] = useState(true);
   const [useSSL, setUseSSL] = useState("");
   const [useMovieIssue, setUseMovieIssue] = useState("");
+  const [tagRequestsWithDiscordUsername, setTagRequestsWithDiscordUsername] = useState(false);
   const [apiVersion, setApiVersion] = useState("");
   const [isValid, setIsValid] = useState(false);
 
@@ -48,10 +49,14 @@ function OverseerrMovie(props) {
     updateStateFromProps(props);
   }, []);
 
+  useEffect(() => {
+    setTagRequestsWithDiscordUsername(reduxState.settings.movies?.tagRequestsWithDiscordUsername ?? false);
+  }, [reduxState.settings.movies?.tagRequestsWithDiscordUsername]);
+
 
   useEffect(() => {
     onValueChange();
-  }, [apiVersion, apiKey, hostname, port, defaultApiUserID, useSSL, useMovieIssue]);
+  }, [apiVersion, apiKey, hostname, port, defaultApiUserID, useSSL, useMovieIssue, tagRequestsWithDiscordUsername]);
 
 
 
@@ -84,6 +89,7 @@ function OverseerrMovie(props) {
     setIsDefaultApiUserIDValid(true);
     setUseSSL(reduxState.settings.useSSL);
     setUseMovieIssue(reduxState.settings.useMovieIssue);
+    setTagRequestsWithDiscordUsername(reduxState.settings.movies?.tagRequestsWithDiscordUsername ?? false);
     setApiVersion(reduxState.settings.version);
     setIsValid(false);
   };
@@ -142,6 +148,7 @@ function OverseerrMovie(props) {
       apiKey: apiKey,
       useSSL: useSSL,
       useMovieIssue: useMovieIssue,
+      tagRequestsWithDiscordUsername: tagRequestsWithDiscordUsername,
       version: apiVersion,
     }));
 
@@ -152,6 +159,7 @@ function OverseerrMovie(props) {
       defaultApiUserID: defaultApiUserID,
       useSSL: useSSL,
       useMovieIssue: useMovieIssue,
+      tagRequestsWithDiscordUsername: tagRequestsWithDiscordUsername,
       version: apiVersion,
     });
 
@@ -284,6 +292,18 @@ function OverseerrMovie(props) {
                 className="custom-control-label"
                 htmlFor="useSSL">
                 <span className="text-muted">Use SSL</span>
+              </label>
+            </FormGroup>
+            <FormGroup className="custom-control custom-control-alternative custom-checkbox mb-3">
+              <Input
+                className="custom-control-input"
+                id="TagRequestsWithDiscordUsernameOverseerrMovies"
+                type="checkbox"
+                onChange={e => setTagRequestsWithDiscordUsername(!tagRequestsWithDiscordUsername)}
+                checked={tagRequestsWithDiscordUsername}
+              />
+              <label className="custom-control-label" htmlFor="TagRequestsWithDiscordUsernameOverseerrMovies">
+                <span className="text-muted">Tag requests with the Discord username when the downstream tag exists</span>
               </label>
             </FormGroup>
           </Col>

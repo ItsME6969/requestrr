@@ -140,6 +140,7 @@ export function setOverseerrMovieConnectionSettings(connectionSettings) {
             useSSL: connectionSettings.useSSL,
             useMovieIssue: connectionSettings.useMovieIssue,
             useTVIssue: connectionSettings.useTVIssue,
+            tagRequestsWithDiscordUsername: connectionSettings.tagRequestsWithDiscordUsername,
             version: connectionSettings.version,
         };
 
@@ -247,6 +248,7 @@ export function saveOverseerrMovieClient(saveModel) {
 
         var movies = {
             DefaultApiUserID: saveModel.overseerr.defaultApiUserID,
+            TagRequestsWithDiscordUsername: saveModel.overseerr.tagRequestsWithDiscordUsername,
             Categories: state.movies.overseerr.categories
         }
 

@@ -84,6 +84,7 @@ namespace Requestrr.WebApi.Controllers.DownloadClients
 
                 settings.DownloadClients.Radarr.SearchNewRequests = radarrSettings.SearchNewRequests;
                 settings.DownloadClients.Radarr.MonitorNewRequests = radarrSettings.MonitorNewRequests;
+                settings.DownloadClients.Radarr.TagRequestsWithDiscordUsername = radarrSettings.TagRequestsWithDiscordUsername;
 
                 settings.DownloadClients.Radarr.UseSSL = radarrSettings.UseSSL;
                 settings.DownloadClients.Radarr.Version = radarrSettings.Version;
@@ -190,6 +191,7 @@ namespace Requestrr.WebApi.Controllers.DownloadClients
 
                 settings.DownloadClients.Sonarr.SearchNewRequests = sonarrSettings.SearchNewRequests;
                 settings.DownloadClients.Sonarr.MonitorNewRequests = sonarrSettings.MonitorNewRequests;
+                settings.DownloadClients.Sonarr.TagRequestsWithDiscordUsername = sonarrSettings.TagRequestsWithDiscordUsername;
 
                 settings.DownloadClients.Sonarr.UseSSL = sonarrSettings.UseSSL;
                 settings.DownloadClients.Sonarr.Version = sonarrSettings.Version;

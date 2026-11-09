@@ -16,6 +16,7 @@ namespace Requestrr.WebApi.Controllers.DownloadClients.Overseerr
         public class OverseerrMovieSettings
     {
         public string DefaultApiUserId { get; set; }
+        public bool TagRequestsWithDiscordUsername { get; set; }
         public OverseerrMovieCategory[] Categories { get; set; } = Array.Empty<OverseerrMovieCategory>();
     }
 

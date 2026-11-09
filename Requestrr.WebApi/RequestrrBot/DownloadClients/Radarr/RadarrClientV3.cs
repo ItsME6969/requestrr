@@ -10,6 +10,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Requestrr.WebApi.Extensions;
 using Requestrr.WebApi.RequestrrBot.Movies;
+using Requestrr.WebApi.RequestrrBot.DownloadClients;
 using static Requestrr.WebApi.RequestrrBot.DownloadClients.Radarr.RadarrClient;
 
 namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Radarr
@@ -224,13 +225,14 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Radarr
         {
             try
             {
+                var requesterTagId = await GetRequesterTagIdAsync(request);
                 if (string.IsNullOrEmpty(movie.DownloadClientId))
                 {
-                    await CreateMovieInRadarr(request, movie);
+                    await CreateMovieInRadarr(request, movie, requesterTagId);
                 }
                 else
                 {
-                    await UpdateExistingMovie(request, movie);
+                    await UpdateExistingMovie(request, movie, requesterTagId);
                 }
 
                 return new MovieRequestResult();
@@ -243,7 +245,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Radarr
             throw new System.Exception("An error occurred while requesting a movie from Radarr");
         }
 
-        private async Task CreateMovieInRadarr(MovieRequest request, Movie movie)
+        private async Task CreateMovieInRadarr(MovieRequest request, Movie movie, int? requesterTagId = null)
         {
             RadarrCategory category = null;
 
@@ -259,13 +261,19 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Radarr
 
             var jsonMovie = await SearchMovieByMovieDbId(int.Parse(movie.TheMovieDbId));
 
+            var tags = category.Tags;
+            if (requesterTagId.HasValue)
+            {
+                tags = tags.Concat(new[] { requesterTagId.Value }).Distinct().ToArray();
+            }
+
             var response = await HttpPostAsync($"{BaseURL}/movie", JsonConvert.SerializeObject(new
             {
                 title = jsonMovie.title,
                 qualityProfileId = category.ProfileId,
                 titleSlug = jsonMovie.titleSlug,
                 monitored = RadarrSettings.MonitorNewRequests,
-                tags = JToken.FromObject(category.Tags),
+                tags = JToken.FromObject(tags),
                 images = new string[0],
                 tmdbId = int.Parse(movie.TheMovieDbId),
                 year = jsonMovie.year,
@@ -282,7 +290,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Radarr
             await response.ThrowIfNotSuccessfulAsync("RadarrMovieCreation failed", x => x.error);
         }
 
-        private async Task UpdateExistingMovie(MovieRequest request, Movie movie)
+        private async Task UpdateExistingMovie(MovieRequest request, Movie movie, int? requesterTagId = null)
         {
             RadarrCategory category = null;
             var radarrMovieId = int.Parse(movie.DownloadClientId);
@@ -292,7 +300,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Radarr
             {
                 if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
                 {
-                    await CreateMovieInRadarr(request, movie);
+                    await CreateMovieInRadarr(request, movie, requesterTagId);
                     return;
                 }
 
@@ -312,7 +320,13 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Radarr
                 throw new System.Exception($"An error occurred while requesting movie \"{movie.Title}\" from Radarr, could not find category with id {request.CategoryId}");
             }
 
-            radarrMovie.tags = JToken.FromObject(category.Tags);
+            var tags = category.Tags;
+            if (requesterTagId.HasValue)
+            {
+                tags = tags.Concat(new[] { requesterTagId.Value }).Distinct().ToArray();
+            }
+
+            radarrMovie.tags = JToken.FromObject(tags);
             radarrMovie.qualityProfileId = category.ProfileId;
             radarrMovie.minimumAvailability = category.MinimumAvailability;
             radarrMovie.monitored = RadarrSettings.MonitorNewRequests;
@@ -416,6 +430,27 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Radarr
         private Task<HttpResponseMessage> HttpGetAsync(string url)
         {
             return HttpGetAsync(_httpClientFactory.CreateClient(), RadarrSettings, url);
+        }
+
+        private async Task<int?> GetRequesterTagIdAsync(MovieRequest request)
+        {
+            if (!RadarrSettings.TagRequestsWithDiscordUsername)
+            {
+                return null;
+            }
+
+            var label = RequesterTagHelper.CreateTag(request.User.UserId, request.User.Username);
+            var tags = await GetTags(_httpClientFactory.CreateClient(), _logger, RadarrSettings);
+            var existingTag = tags.FirstOrDefault(x => string.Equals(x.label, label, StringComparison.OrdinalIgnoreCase));
+            if (existingTag != null)
+            {
+                return existingTag.id;
+            }
+
+            var response = await HttpPostAsync($"{BaseURL}/tag", JsonConvert.SerializeObject(new { id = 0, label }));
+            await response.ThrowIfNotSuccessfulAsync("RadarrRequesterTagCreation failed", x => x.error);
+            var createdTag = JsonConvert.DeserializeObject<JSONTag>(await response.Content.ReadAsStringAsync());
+            return createdTag.id;
         }
 
         private static async Task<HttpResponseMessage> HttpGetAsync(HttpClient client, RadarrSettings settings, string url)

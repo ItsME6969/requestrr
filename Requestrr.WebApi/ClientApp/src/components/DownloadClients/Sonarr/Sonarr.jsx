@@ -34,6 +34,7 @@ function Sonarr(props) {
   const [baseUrl, setBaseUrl] = useState("");
   const [searchNewRequests, setSearchNewRequests] = useState(true);
   const [monitorNewRequests, setMonitorNewRequests] = useState(true);
+  const [tagRequestsWithDiscordUsername, setTagRequestsWithDiscordUsername] = useState(false);
 
   const pastState = useRef();
 
@@ -49,6 +50,10 @@ function Sonarr(props) {
   useEffect(() => {
     updateStateFromProps();
   }, []);
+
+  useEffect(() => {
+    setTagRequestsWithDiscordUsername(reduxState.settings.tagRequestsWithDiscordUsername ?? false);
+  }, [reduxState.settings.tagRequestsWithDiscordUsername]);
 
 
   useEffect(() => {
@@ -68,7 +73,7 @@ function Sonarr(props) {
 
   useEffect(() => {
     onValueChange();
-  }, [apiVersion, apiKey, hostname, port, baseUrl, monitorNewRequests, searchNewRequests, useSSL, reduxState.settings.areLanguagesValid]);
+  }, [apiVersion, apiKey, hostname, port, baseUrl, monitorNewRequests, searchNewRequests, useSSL, tagRequestsWithDiscordUsername, reduxState.settings.areLanguagesValid]);
 
 
 
@@ -117,6 +122,7 @@ function Sonarr(props) {
     setBaseUrl(reduxState.settings.baseUrl);
     setSearchNewRequests(reduxState.settings.searchNewRequests);
     setMonitorNewRequests(reduxState.settings.monitorNewRequests);
+    setTagRequestsWithDiscordUsername(reduxState.settings.tagRequestsWithDiscordUsername);
   };
 
 
@@ -173,6 +179,7 @@ function Sonarr(props) {
       port: port,
       apiKey: apiKey,
       useSSL: useSSL,
+      tagRequestsWithDiscordUsername: tagRequestsWithDiscordUsername,
       version: apiVersion,
     }));
 
@@ -186,6 +193,7 @@ function Sonarr(props) {
       version: apiVersion,
       searchNewRequests: searchNewRequests,
       monitorNewRequests: monitorNewRequests,
+      tagRequestsWithDiscordUsername: tagRequestsWithDiscordUsername,
     });
 
     onValidate();
@@ -288,6 +296,19 @@ function Sonarr(props) {
                 className="custom-control-label"
                 htmlFor="useSSL">
                 <span className="text-muted">Use SSL</span>
+              </label>
+            </FormGroup>
+            <FormGroup className="custom-control custom-control-alternative custom-checkbox mb-3">
+              <Input
+                className="custom-control-input"
+                id="TagRequestsWithDiscordUsernameSonarr"
+                type="checkbox"
+                disabled={apiVersion === "2"}
+                onChange={e => setTagRequestsWithDiscordUsername(!tagRequestsWithDiscordUsername)}
+                checked={tagRequestsWithDiscordUsername}
+              />
+              <label className="custom-control-label" htmlFor="TagRequestsWithDiscordUsernameSonarr">
+                <span className="text-muted">Tag requests with the Discord username</span>
               </label>
             </FormGroup>
           </Col>

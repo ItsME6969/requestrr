@@ -55,6 +55,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
     public class OverseerrMovieSettings
     {
         public string DefaultApiUserId { get; set; }
+        public bool TagRequestsWithDiscordUsername { get; set; }
         public OverseerrMovieCategory[] Categories { get; set; } = Array.Empty<OverseerrMovieCategory>();
     }
 
@@ -72,6 +73,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
     public class OverseerrTvShowSettings
     {
         public string DefaultApiUserId { get; set; }
+        public bool TagRequestsWithDiscordUsername { get; set; }
         public OverseerrTvShowCategory[] Categories { get; set; } = Array.Empty<OverseerrTvShowCategory>();
     }
 

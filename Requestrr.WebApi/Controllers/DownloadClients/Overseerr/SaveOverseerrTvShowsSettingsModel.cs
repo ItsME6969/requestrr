@@ -18,6 +18,7 @@ namespace Requestrr.WebApi.Controllers.DownloadClients.Overseerr
     public class OverseerrTvShowSettings
     {
         public string DefaultApiUserId { get; set; }
+        public bool TagRequestsWithDiscordUsername { get; set; }
         public OverseerrTvShowCategory[] Categories { get; set; } = Array.Empty<OverseerrTvShowCategory>();
     }
 

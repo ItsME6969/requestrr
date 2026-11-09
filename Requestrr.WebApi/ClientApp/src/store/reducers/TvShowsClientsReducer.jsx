@@ -22,6 +22,9 @@ export default function TvShowsClientsReducer(state = {}, action) {
         apiKey: action.payload.overseerr.apiKey,
         defaultApiUserID: action.payload.overseerr.tvShows.defaultApiUserId,
         categories: action.payload.overseerr.tvShows.categories,
+        tvShows: {
+          tagRequestsWithDiscordUsername: action.payload.overseerr.tvShows.tagRequestsWithDiscordUsername,
+        },
         useSSL: action.payload.overseerr.useSSL,
         useMovieIssue: action.payload.overseerr.useMovieIssue,
         useTVIssue: action.payload.overseerr.useTVIssue,
@@ -39,6 +42,7 @@ export default function TvShowsClientsReducer(state = {}, action) {
         categories: action.payload.sonarr.categories,
         searchNewRequests: action.payload.sonarr.searchNewRequests,
         monitorNewRequests: action.payload.sonarr.monitorNewRequests,
+        tagRequestsWithDiscordUsername: action.payload.sonarr.tagRequestsWithDiscordUsername,
         useSSL: action.payload.sonarr.useSSL,
         version: action.payload.sonarr.version,
         isLoadingPaths: false,

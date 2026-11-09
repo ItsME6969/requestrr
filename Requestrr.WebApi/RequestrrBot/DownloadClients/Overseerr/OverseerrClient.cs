@@ -11,6 +11,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Requestrr.WebApi.Extensions;
 using Requestrr.WebApi.RequestrrBot.Locale;
+using Requestrr.WebApi.RequestrrBot.DownloadClients;
 using Requestrr.WebApi.RequestrrBot.Movies;
 using Requestrr.WebApi.RequestrrBot.TvShows;
 
@@ -427,6 +428,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                     Permission[] permissions = new[] { Permission.AUTO_APPROVE, Permission.AUTO_APPROVE_MOVIE };
 
                     var category = GetCurrentCategory(request, movie.Title);
+                    var requestTags = await GetMovieRequestTagsAsync(category, request);
 
                     if (category.Is4K)
                     {
@@ -450,7 +452,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                                 serverId = category.ServiceId,
                                 profileId = category.ProfileId,
                                 rootFolder = category.RootFolder,
-                                tags = JToken.FromObject(category.Tags),
+                                tags = JToken.FromObject(requestTags),
                                 userId = int.Parse(overseerrUser),
                             }));
                         }
@@ -480,7 +482,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                                 profileId = category.ProfileId,
                                 rootFolder = category.RootFolder,
                                 serverId = category.ServiceId,
-                                tags = JToken.FromObject(category.Tags),
+                                tags = JToken.FromObject(requestTags),
                                 userId = int.Parse(overseerrUser),
                             }));
                         }
@@ -495,7 +497,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                             serverId = category.ServiceId,
                             profileId = category.ProfileId,
                             rootFolder = category.RootFolder,
-                            tags = JToken.FromObject(category.Tags)
+                            tags = JToken.FromObject(requestTags)
                         }));
                     }
                 }
@@ -742,6 +744,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                     Permission[] permissions = new[] { Permission.AUTO_APPROVE, Permission.AUTO_APPROVE_TV };
 
                     var category = GetCurrentCategory(request, tvShow.Title);
+                    var requestTags = await GetTvShowRequestTagsAsync(category, request);
 
                     if (category.Is4K)
                     {
@@ -767,7 +770,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                                 profileId = category.ProfileId,
                                 languageProfileId = category.LanguageProfileId == -1 ? 0 : category.LanguageProfileId,
                                 rootFolder = category.RootFolder,
-                                tags = JToken.FromObject(category.Tags),
+                                tags = JToken.FromObject(requestTags),
                                 userId = int.Parse(overseerrUser),
                             }));
                         }
@@ -800,7 +803,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                                 languageProfileId = category.LanguageProfileId == -1 ? 0 : category.LanguageProfileId,
                                 rootFolder = category.RootFolder,
                                 serverId = category.ServiceId,
-                                tags = JToken.FromObject(category.Tags),
+                                tags = JToken.FromObject(requestTags),
                                 userId = int.Parse(overseerrUser),
                             }));
                         }
@@ -817,7 +820,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                             profileId = category.ProfileId,
                             languageProfileId = category.LanguageProfileId == -1 ? 0 : category.LanguageProfileId,
                             rootFolder = category.RootFolder,
-                            tags = JToken.FromObject(category.Tags)
+                            tags = JToken.FromObject(requestTags)
                         }));
                     }
                 }
@@ -1145,6 +1148,64 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
             }
 
             return DefaultMovieCategory;
+        }
+
+        private async Task<int[]> GetMovieRequestTagsAsync(OverseerrMovieCategory category, MovieRequest request)
+        {
+            if (!OverseerrSettings.Movies.TagRequestsWithDiscordUsername || category.ServiceId < 0)
+            {
+                return category.Tags;
+            }
+
+            var label = RequesterTagHelper.CreateTag(request.User.UserId, request.User.Username);
+            try
+            {
+                var response = await HttpGetAsync($"{BaseURL}service/radarr/{category.ServiceId}");
+                await response.ThrowIfNotSuccessfulAsync("OverseerrGetRadarrDetailsForRequesterTag failed", x => x.error);
+                var details = JsonConvert.DeserializeObject<JSONRadarrClientDetails>(await response.Content.ReadAsStringAsync());
+                var tag = details.Tags?.FirstOrDefault(x => string.Equals(x.Label, label, StringComparison.OrdinalIgnoreCase));
+                if (tag != null)
+                {
+                    return category.Tags.Concat(new[] { tag.ID }).Distinct().ToArray();
+                }
+
+                _logger.LogWarning("Requester tag {RequesterTag} is not available in Overseerr's Radarr service {ServiceId}; using configured tags only", label, category.ServiceId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Unable to resolve requester tag {RequesterTag} from Overseerr's Radarr service {ServiceId}; using configured tags only", label, category.ServiceId);
+            }
+
+            return category.Tags;
+        }
+
+        private async Task<int[]> GetTvShowRequestTagsAsync(OverseerrTvShowCategory category, TvShowRequest request)
+        {
+            if (!OverseerrSettings.TvShows.TagRequestsWithDiscordUsername || category.ServiceId < 0)
+            {
+                return category.Tags;
+            }
+
+            var label = RequesterTagHelper.CreateTag(request.User.UserId, request.User.Username);
+            try
+            {
+                var response = await HttpGetAsync($"{BaseURL}service/sonarr/{category.ServiceId}");
+                await response.ThrowIfNotSuccessfulAsync("OverseerrGetSonarrDetailsForRequesterTag failed", x => x.error);
+                var details = JsonConvert.DeserializeObject<JSONSonarrClientDetails>(await response.Content.ReadAsStringAsync());
+                var tag = details.Tags?.FirstOrDefault(x => string.Equals(x.Label, label, StringComparison.OrdinalIgnoreCase));
+                if (tag != null)
+                {
+                    return category.Tags.Concat(new[] { tag.ID }).Distinct().ToArray();
+                }
+
+                _logger.LogWarning("Requester tag {RequesterTag} is not available in Overseerr's Sonarr service {ServiceId}; using configured tags only", label, category.ServiceId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Unable to resolve requester tag {RequesterTag} from Overseerr's Sonarr service {ServiceId}; using configured tags only", label, category.ServiceId);
+            }
+
+            return category.Tags;
         }
 
         private OverseerrTvShowCategory GetCurrentCategory(TvShowRequest request, string tvShowTitle)
