@@ -422,6 +422,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
             {
                 HttpResponseMessage response = null;
                 var overseerrUser = await FindLinkedOverseerUserAsync(request.User.UserId, request.User.Username, OverseerrSettings.Movies.DefaultApiUserId);
+                var requesterTag = RequesterTagHelper.CreateTag(request.User.UserId, request.User.Username);
 
                 if (OverseerrSettings.Movies.Categories.Any())
                 {
@@ -453,6 +454,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                                 profileId = category.ProfileId,
                                 rootFolder = category.RootFolder,
                                 tags = JToken.FromObject(requestTags),
+                                requesterTag,
                                 userId = int.Parse(overseerrUser),
                             }));
                         }
@@ -462,7 +464,8 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                             {
                                 mediaId = int.Parse(movie.TheMovieDbId),
                                 mediaType = "movie",
-                                is4k = category.Is4K
+                                is4k = category.Is4K,
+                                requesterTag,
                             }));
 
                             if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
@@ -483,6 +486,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                                 rootFolder = category.RootFolder,
                                 serverId = category.ServiceId,
                                 tags = JToken.FromObject(requestTags),
+                                requesterTag,
                                 userId = int.Parse(overseerrUser),
                             }));
                         }
@@ -497,7 +501,8 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                             serverId = category.ServiceId,
                             profileId = category.ProfileId,
                             rootFolder = category.RootFolder,
-                            tags = JToken.FromObject(requestTags)
+                            tags = JToken.FromObject(requestTags),
+                            requesterTag
                         }));
                     }
                 }
@@ -507,6 +512,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                     {
                         mediaId = int.Parse(movie.TheMovieDbId),
                         mediaType = "movie",
+                        requesterTag,
                     }));
                 }
 
@@ -738,6 +744,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
 
                 HttpResponseMessage response = null;
                 var overseerrUser = await FindLinkedOverseerUserAsync(request.User.UserId, request.User.Username, OverseerrSettings.TvShows.DefaultApiUserId);
+                var requesterTag = RequesterTagHelper.CreateTag(request.User.UserId, request.User.Username);
 
                 if (OverseerrSettings.TvShows.Categories.Any())
                 {
@@ -771,6 +778,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                                 languageProfileId = category.LanguageProfileId == -1 ? 0 : category.LanguageProfileId,
                                 rootFolder = category.RootFolder,
                                 tags = JToken.FromObject(requestTags),
+                                requesterTag,
                                 userId = int.Parse(overseerrUser),
                             }));
                         }
@@ -781,7 +789,8 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                                 mediaId = tvShow.TheTvDbId,
                                 mediaType = "tv",
                                 seasons = wantedSeasonIds.ToArray(),
-                                is4k = category.Is4K
+                                is4k = category.Is4K,
+                                requesterTag,
                             }));
 
                             if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
@@ -804,6 +813,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                                 rootFolder = category.RootFolder,
                                 serverId = category.ServiceId,
                                 tags = JToken.FromObject(requestTags),
+                                requesterTag,
                                 userId = int.Parse(overseerrUser),
                             }));
                         }
@@ -820,7 +830,8 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                             profileId = category.ProfileId,
                             languageProfileId = category.LanguageProfileId == -1 ? 0 : category.LanguageProfileId,
                             rootFolder = category.RootFolder,
-                            tags = JToken.FromObject(requestTags)
+                            tags = JToken.FromObject(requestTags),
+                            requesterTag
                         }));
                     }
                 }
@@ -831,6 +842,7 @@ namespace Requestrr.WebApi.RequestrrBot.DownloadClients.Overseerr
                         mediaId = tvShow.TheTvDbId,
                         mediaType = "tv",
                         seasons = wantedSeasonIds.ToArray(),
+                        requesterTag,
                     }));
                 }
 
